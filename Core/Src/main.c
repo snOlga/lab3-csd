@@ -70,47 +70,67 @@ static void MX_TIM7_Init(void);
 #define RED_ORANGE_TIMER &htim7
 int start_timer_gr_val = 0;
 int start_timer_ro_val = 0;
+int max_green = MAX_BRIGHT;
+int max_ro = MAX_BRIGHT;
+int is_up_green_global = -1;
+int is_up_ro_global = -1;
 
 void change_speed(TIM_HandleTypeDef *timer, int speed) {
 	__HAL_TIM_SET_PRESCALER(timer, speed);
 }
 
-void light_green(int speed, int max_brightness, int min_brightness) {
+int light_green(int speed, int max_brightness, int min_brightness, int is_up) {
+	if(is_up_green_global == -1) is_up_green_global = is_up;
 	change_speed(GREEN_TIMER, speed);
 	int cur_ticks = __HAL_TIM_GET_COUNTER(GREEN_TIMER);
 	int up_brightness = (cur_ticks > min_brightness ? (cur_ticks < max_brightness ? cur_ticks : max_brightness) : min_brightness);
 	int less_brightness = (max_brightness-cur_ticks > min_brightness ? (max_brightness-cur_ticks) : min_brightness);
-	int cur_brightness = start_timer_gr_val == 0 ? up_brightness : less_brightness ;
+	int cur_brightness = is_up == 1 ? up_brightness : less_brightness;
 
 	TIM4->CCR2=cur_brightness;
+
+	if(is_up_green_global != is_up) {
+		is_up_green_global = is_up;
+		__HAL_TIM_SET_COUNTER(GREEN_TIMER, cur_ticks >= max_green ? min_brightness : cur_ticks);
+	}
+
+	max_green = max_brightness;
+	return cur_ticks >= max_green ? 1 : 0;
 }
 
-void light_orange_red(int speed, int color, int max_brightness, int min_brightness) {
+int light_orange_red(int speed, int color, int max_brightness, int min_brightness, int is_up) {
+	if(is_up_ro_global == -1) is_up_ro_global = is_up;
 	change_speed(RED_ORANGE_TIMER, speed);
 	int cur_ticks = __HAL_TIM_GET_COUNTER(RED_ORANGE_TIMER);
-	int cur_brightness = start_timer_ro_val == 0 ? cur_ticks : MAX_BRIGHT - cur_ticks;
+	int cur_brightness = is_up == 1 ? cur_ticks : MAX_BRIGHT - cur_ticks;
 
 	if(color == ORANGE) TIM4->CCR3=cur_brightness;
 	else if(color == RED) TIM4->CCR4=cur_brightness;
+
+	if(is_up_ro_global != is_up) {
+		is_up_ro_global = is_up;
+		__HAL_TIM_SET_COUNTER(RED_ORANGE_TIMER, cur_ticks >= max_ro ? min_brightness : cur_ticks);
+	}
+
+	max_ro = max_brightness;
+	return cur_ticks >= max_ro ? 1 : 0;
 }
 
-void light(int speed, int color, int min_brightness, int max_brightness) {
+int light(int speed, int color, int min_brightness, int max_brightness, int is_up) {
 	if(max_brightness > MAX_BRIGHT) max_brightness = MAX_BRIGHT;
 	if(min_brightness < MIN_BRIGHT) min_brightness = MIN_BRIGHT;
-	if(color == GREEN) light_green(speed, max_brightness, min_brightness);
-	else light_orange_red(speed, color, max_brightness, min_brightness);
+	if(color == GREEN) return light_green(speed, max_brightness, min_brightness, is_up);
+	else return light_orange_red(speed, color, max_brightness, min_brightness, is_up);
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	if( htim->Instance == TIM6 ){
-		if(start_timer_gr_val == 0) start_timer_gr_val = 65535;
-			else start_timer_gr_val = 0;
+		__HAL_TIM_SET_COUNTER(GREEN_TIMER, max_green);
 	}
 	if( htim->Instance == TIM7 ){
-			if(start_timer_ro_val == 0) start_timer_ro_val = 65535;
-				else start_timer_ro_val = 0;
-		}
+		__HAL_TIM_SET_COUNTER(RED_ORANGE_TIMER, max_ro);
+	}
 }
 
 /* USER CODE END 0 */
@@ -159,10 +179,13 @@ int main(void)
   HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);
   HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
 
+  int up = 0;
   while (1)
   {
-	  light(65535/4, RED, 0, 100);
-	  light(65535/4, GREEN, 1000, 6000);
+	  if(light(1000, RED, 0, 65535, up) == 1) {
+		  up = 1;
+	  }
+//	  light(1000, GREEN, 0, 65535, 0);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
